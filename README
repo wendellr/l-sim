@@ -1,0 +1,10 @@
+Programa: L-Sim (Simulador de Descargas Atmosféricas)
+Author: Wendell Rodrigues
+
+Arquivos:
+l-sim.pl 	Programa Principal (chama as rotinas passo a passo)
+funcoes.pl	Funcoes relacionadas aos algoritmos de geracao e deteccao de raios
+kml.pl		Funcoes que produzem saida no formato KML (Google Earth)
+upd.kml		Arquivo que cria um link de atualização a cada 1s. no GE 
+maranhao.pl	Poligono do Maranhao em formato lat/lon
+loop.sh		Batch em shell que executa 100x o l-sim para estatisticas de erro.
