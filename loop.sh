@@ -1,10 +1,7 @@
 #!/bin/sh
+# Executa N simulacoes (padrao: 100) e imprime as estatisticas de erro.
+# Uso: ./loop.sh [N] [outras opcoes do l-sim.pl]
 
-a=1
-
-until [ $a -ge 100 ]
-do
-   perl l-sim.pl
-   a=`expr $a + 1`
-done
-
+N=${1:-100}
+[ $# -gt 0 ] && shift
+exec perl "$(dirname "$0")/l-sim.pl" --rodadas "$N" "$@"

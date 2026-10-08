@@ -1,244 +1,195 @@
-#!/bin/perl
-# Funcoes auxiliares
+#!/usr/bin/perl
+# Funcoes de geracao e deteccao de raios (sem dependencias externas).
 
-use Geo::Distance;
-use Data::Dumper;
+use strict;
+use warnings;
+use List::Util qw(min max sum);
+
+use constant {
+  PI           => 4 * atan2(1, 1),
+  RAIO_TERRA_M => 6_371_008.8,   # raio medio da Terra (m)
+};
+
+# Faixas de deteccao em km (0-5, 5-13, 13-32, 32-64) ~ ml (0-3, 3-8, 8-20, 20-40).
+# Faixas continuas: a estacao informa em qual faixa [min, max) o raio caiu.
+our @FAIXAS = (
+  { min => 0,  max => 5  },
+  { min => 5,  max => 13 },
+  { min => 13, max => 32 },
+  { min => 32, max => 64 },
+);
+
+sub rad { $_[0] * PI / 180 }
+sub deg { $_[0] * 180 / PI }
 
 #
 #---------------------------------------------------------------------------
+# Geometria
 #
 
-# Funcoes Geo
-my $geo = new Geo::Distance;
-$geo->formula('gcd');
-
-# Ranges de deteccao em km (0-5,5-13,13-32,32-64) ou ml (0-3,3-8,8-20,20-40)
-$range[0]{'min'} = 0; 
-$range[0]{'max'} = 5;
-$range[1]{'min'} = 6;
-$range[1]{'max'} = 13;
-$range[2]{'min'} = 14;
-$range[2]{'max'} = 32;
-$range[3]{'min'} = 33;
-$range[3]{'max'} = 64;
-
-#
-#---------------------------------------------------------------------------
-#
-
-sub region_in_a_distance {
-# distancia
-# angulo
-# lat0
-# lat1
-$ct1 = 111320; #constantes da Terra
-$ct2 = 110540;
-   my ($D,$theta,$lat0,$lon0) = @_;
-   $dx = $D*cos($theta);
-   $dy = $D*sin($theta);
-
-   $d_lon = $dx/($ct1*cos($lat0*0.0174533));
-   $d_lat = $dy/$ct2;
-
-   $pfinal{'lon'} = $lon0 + $d_lon;
-   $pfinal{'lat'} = $lat0 + $d_lat;
-
-   return %pfinal;
+# Distancia ortodromica (haversine) em km entre (lat1,lon1) e (lat2,lon2).
+sub distancia_km {
+  my ($lat1, $lon1, $lat2, $lon2) = @_;
+  my $dlat = rad($lat2 - $lat1);
+  my $dlon = rad($lon2 - $lon1);
+  my $a = sin($dlat / 2)**2
+        + cos(rad($lat1)) * cos(rad($lat2)) * sin($dlon / 2)**2;
+  return 2 * RAIO_TERRA_M * atan2(sqrt($a), sqrt(1 - $a)) / 1000;
 }
 
+# Ponto a uma distancia (m) e azimute (rad, a partir do norte) de (lat0,lon0).
+sub ponto_a_distancia {
+  my ($dist_m, $azimute, $lat0, $lon0) = @_;
+  my $d    = $dist_m / RAIO_TERRA_M;
+  my $phi1 = rad($lat0);
+  my $lam1 = rad($lon0);
 
-#
-#---------------------------------------------------------------------------
-#
+  my $phi2 = asin_( sin($phi1) * cos($d) + cos($phi1) * sin($d) * cos($azimute) );
+  my $lam2 = $lam1 + atan2( sin($azimute) * sin($d) * cos($phi1),
+                            cos($d) - sin($phi1) * sin($phi2) );
 
-sub is_in_area
-{
-    my($y,$x,@polygon) = @_;
-
-    if($polygon[0] != $polygon[$#polygon-1]){
-        $polygon[$#polygon] = $polygon[0];
-    }
-
-    my $i,$j;
-    $j = 0;
-    $oddNodes = false;
-    $n = $#polygon;
-
-    for ($i = 0; $i < $n; $i++)
-    {
-        $j++;
-        if ($j == $n)
-        {
-            $j = 0;
-        }
-        if ((($polygon[$i]{'lat'} < $y) && ($polygon[$j]{'lat'} >= $y)) || (($polygon[$j]{'lat'} < $y) && ($polygon[$i]{'lat'} >=
-            $y)))
-        {
-            if ($polygon[$i]{'lon'} + ($y - $polygon[$i]{'lat'}) / ($polygon[$j]{'lat'} - $polygon[$i]{'lat'}) * ($polygon[$j]{'lon'} -
-                $polygon[$i]{'lon'}) < $x)
-            {
-                $oddNodes = !$oddNodes;
-            }
-        }
-    }
-    return !$oddNodes;
+  return { lat => deg($phi2), lon => deg($lam2) };
 }
 
+sub asin_ { my $x = shift; return atan2($x, sqrt(1 - $x * $x)) }
 
-sub plot_in_sq_area {
+# Ponto dentro do poligono? (ray casting; poligono = lista de [lat, lon])
+sub dentro_poligono {
+  my ($lat, $lon, $pol) = @_;
+  my $dentro = 0;
+  my $n = @$pol;
 
-  my @estacao;
-  my @est_in;
-  my $i,$j;
-  my ($numestacoes,$northlat,$eastlon,$southlat,$westlon,@pol) = @_;
-
-  my $latdif = $northlat - $southlat;
-  my $londif = $eastlon - $westlon;
-
-  for ($i=0;$i<sqrt($numestacoes);$i++) {
-    for ($j=0;$j<sqrt($numestacoes);$j++) {
-     $estacao[$i*sqrt($numestacoes)+$j]{'lat'} = $i*$latdif/sqrt($numestacoes) + $southlat;
-     $estacao[$i*sqrt($numestacoes)+$j]{'lon'} = $j*$londif/sqrt($numestacoes) + $westlon;
+  for (my $i = 0, my $j = $n - 1; $i < $n; $j = $i++) {
+    my ($lati, $loni) = @{ $pol->[$i] };
+    my ($latj, $lonj) = @{ $pol->[$j] };
+    if ( ($lati > $lat) != ($latj > $lat)
+         and $lon < ($lonj - $loni) * ($lat - $lati) / ($latj - $lati) + $loni ) {
+      $dentro = !$dentro;
     }
   }
-
-
-  $c=0; # contador de estacoes dentro da area quadrada
-
-  for ($k=0;$k<$numestacoes;$k++) {
-   if (is_in_area($estacao[$k]{'lat'},$estacao[$k]{'lon'},@pol)) {
-     $est_in[$c]{'lat'}=$estacao[$k]{'lat'};
-     $est_in[$c]{'lon'}=$estacao[$k]{'lon'};
-     $c++;
-   }
-  }
-
-  return ($c,@est_in);
+  return $dentro;
 }
 
-sub do_strike {
+#
+#---------------------------------------------------------------------------
+# Simulacao
+#
 
-  my ($northlat,$eastlon,$southlat,$westlon,@pol) = @_;
+# Distribui ~$num estacoes numa grade regular sobre o retangulo da area e
+# mantem apenas as que caem dentro do poligono.
+sub gerar_estacoes {
+  my ($num, $area) = @_;
 
-  my $latdif = $northlat - $southlat;
-  my $londif = $eastlon - $westlon;
-  my %raio;
+  my $lado   = int(sqrt($num) + 0.5);
+  my $dlat   = ($area->{north} - $area->{south}) / $lado;
+  my $dlon   = ($area->{east}  - $area->{west})  / $lado;
+  my @estacoes;
+
+  for my $i (0 .. $lado - 1) {
+    for my $j (0 .. $lado - 1) {
+      my $lat = $area->{south} + ($i + 0.5) * $dlat;
+      my $lon = $area->{west}  + ($j + 0.5) * $dlon;
+      push @estacoes, { lat => $lat, lon => $lon }
+        if dentro_poligono($lat, $lon, $area->{poligono});
+    }
+  }
+  return @estacoes;
+}
+
+# Raio em posicao aleatoria (uniforme) dentro do poligono da area.
+sub gerar_raio {
+  my ($area) = @_;
+  my ($lat, $lon);
   do {
-   $raio{'lat'} = rand($latdif) + $southlat;
-   $raio{'lon'} = rand($londif) + $westlon;
-  }while (!is_in_area($raio{'lat'},$raio{'lon'},@pol));
+    $lat = $area->{south} + rand($area->{north} - $area->{south});
+    $lon = $area->{west}  + rand($area->{east}  - $area->{west});
+  } while (!dentro_poligono($lat, $lon, $area->{poligono}));
 
-  return %raio;
+  return { lat => $lat, lon => $lon };
 }
 
-sub find_detectors {
+# Estacoes que detectaram o raio, com a faixa de distancia correspondente.
+sub encontrar_detectores {
+  my ($raio, $estacoes) = @_;
+  my @detectores;
 
-  my (%raio) = %{$_[0]};
-  my (@estacao) = @{$_[1]};
+  for my $idx (0 .. $#$estacoes) {
+    my $e = $estacoes->[$idx];
+    my $d = distancia_km($e->{lat}, $e->{lon}, $raio->{lat}, $raio->{lon});
 
-  my $cd=0;
-  my $distance=0;
-
-  for ($i=0;$i<=$#estacao;$i++) {
-   $distance = int($geo->distance( 'kilometer', 
-		    $estacao[$i]{'lon'},
-		    $estacao[$i]{'lat'} =>
-		    $raio{'lon'},
-		    $raio{'lat'}));
-
-   #print "$i $distance\n";
-
-   for ($z=0;$z<4;$z++) {
-     if ($distance <= $range[$z]{'max'} and $distance >= $range[$z]{'min'}) {
-       $detectores[$cd]{'lat'} = $estacao[$i]{'lat'};
-       $detectores[$cd]{'lon'} = $estacao[$i]{'lon'};
-       $detectores[$cd]{'min'} = $range[$z]{'min'};
-       $detectores[$cd]{'max'} = $range[$z]{'max'};
-       $cd++;
-     } # fim do if
-    } # fim do for 4 ranges
-
-  } # for estacoes
-  
+    for my $f (@FAIXAS) {
+      if ($d >= $f->{min} and ($d < $f->{max} or ($f == $FAIXAS[-1] and $d == $f->{max}))) {
+        push @detectores, { %$e, idx => $idx, min => $f->{min}, max => $f->{max} };
+        last;
+      }
+    }
+  }
   return @detectores;
 }
 
-
-sub make_range {
-
+# Circulos (interno e externo) de cada faixa de deteccao, para o KML.
+sub gerar_regioes {
   my (@detectores) = @_;
-  for ($z=0;$z<=$#detectores;$z++) {
-   $pnt=0;
-   for ($angle=0;$angle<360;$angle++) {
-	%result = region_in_a_distance($detectores[$z]{'min'}*1000, $angle*0.0174533, $detectores[$z]{'lat'},$detectores[$z]{'lon'});
-	$poli[$z][$pnt]{'lat'} = $result{'lat'};
-	$poli[$z][$pnt]{'lon'} = $result{'lon'};
-        $pnt++;
-   } 
-   for ($angle=0;$angle<360;$angle++) {
-	%result = region_in_a_distance($detectores[$z]{'max'}*1000, $angle*0.0174533, $detectores[$z]{'lat'},$detectores[$z]{'lon'});
-	$poli[$z][$pnt]{'lat'} = $result{'lat'};
-	$poli[$z][$pnt]{'lon'} = $result{'lon'};
-        $pnt++;
-   } 
-  } # fim for geral
+  my @regioes;
 
-  return @poli; # retorna o poligono todo
+  for my $det (@detectores) {
+    my %anel;
+    for my $borda (qw(min max)) {
+      my @circ = map {
+        ponto_a_distancia($det->{$borda} * 1000, rad($_), $det->{lat}, $det->{lon})
+      } 0 .. 360;    # 361 pontos: anel fechado
+      $anel{$borda} = \@circ;
+    }
+    push @regioes, \%anel;
+  }
+  return @regioes;
 }
 
+# Estima a posicao do raio: varre, numa grade uniforme (km), o anel do
+# detector de menor area e retorna o centroide dos pontos compativeis com
+# todas as faixas. Se nenhum ponto satisfaz tudo, usa os de menor violacao.
+# Precisa de >= 2 detectores.
+sub estimar_raio {
+  my (@detectores) = @_;
+  return undef if @detectores < 2;
 
-sub guess_strike{
-# Localiza ponto de interesecao
+  my ($ref) = sort { ($a->{max}**2 - $a->{min}**2) <=> ($b->{max}**2 - $b->{min}**2) } @detectores;
+  my $passo_km = 0.5;
+  my $n = int($ref->{max} / $passo_km);
+  my ($melhor, @pontos) = (9**9**9);
 
-  my (@detectores) = @{$_[0]};
-  my (@poli) = @{$_[1]};
+  for my $ix (-$n .. $n) {
+    for my $iy (-$n .. $n) {
+      my ($x, $y) = ($ix * $passo_km, $iy * $passo_km);
+      my $dist = sqrt($x * $x + $y * $y);
+      next if $dist < $ref->{min} or $dist > $ref->{max};
+      my $p = ponto_a_distancia($dist * 1000, atan2($x, $y), $ref->{lat}, $ref->{lon});
 
-   my $ref1=$detectores[0]{'lat'};
-   my $ref2=$detectores[0]{'lon'};
-   my $min =$detectores[0]{'min'}*1000;
-   my $max =$detectores[0]{'max'}*1000;
+      my $violacao = 0;
+      for my $det (@detectores) {
+        next if $det == $ref;
+        my $d = distancia_km($det->{lat}, $det->{lon}, $p->{lat}, $p->{lon});
+        $violacao += max(0, $det->{min} - $d, $d - $det->{max});
+        last if $violacao > $melhor;
+      }
 
-   if ($#detectores>=1) {  #minimo suficiente
-   OUTER:
-   for ($angle=0;$angle<360;$angle++) {
-      $step=1000; #1km
-      for ($dist=$min;$dist<=$max;$dist+=$step) {
-	%result = region_in_a_distance($dist, $angle*0.0174533, $ref1,$ref2);
+      if ($violacao < $melhor) { ($melhor, @pontos) = ($violacao, $p) }
+      elsif ($violacao == $melhor) { push @pontos, $p }
+    }
+  }
 
-	# cada outro compara!
-	$lat1=$result{'lat'};
-	$lon1=$result{'lon'};
-	$todos=1;
-	for ($z=1;$z<=$#detectores;$z++) {
-
-	  for ($p=0;$p<720;$p++) {   #le o poligono
-		$polig[$p]=$poli[$z][$p];
-	  }
-
-	  if (!is_in_area($lat1,$lon1,@polig)) { #procura o que esta em tudo
-		$todos=0;
-	  }
-	}
-
-	if ($todos==1) { 
-		$pfound{'lat'}=$lat1;
-		$pfound{'lon'}=$lon1;
-		last OUTER;
-	}
-
-       } #fim for 1
-      } #fim for 2
-     }#fim if
-
-    return %pfound;
+  return {
+    lat      => sum(map { $_->{lat} } @pontos) / @pontos,
+    lon      => sum(map { $_->{lon} } @pontos) / @pontos,
+    violacao => $melhor,
+    pontos   => scalar @pontos,
+  };
 }
 
-
-sub calc_error {
-   my (%pfound) = %{$_[0]};
-   my (%raio) = %{$_[1]};
-
-   my $distance = int($geo->distance( 'kilometer', $pfound{'lon'},$pfound{'lat'} =>$raio{'lon'},$raio{'lat'}));
-
-   return $distance;
+# Erro de localizacao (km) entre o raio estimado e o real.
+sub calc_erro {
+  my ($estimado, $raio) = @_;
+  return distancia_km($estimado->{lat}, $estimado->{lon}, $raio->{lat}, $raio->{lon});
 }
+
+1;
