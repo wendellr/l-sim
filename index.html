@@ -1,0 +1,986 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>L-Sim Maranhão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..100,500..800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: mapa-instrumento grande a esquerda, painel de etapas a direita; estatisticas abaixo. */
+:root {
+  --bg: #e9eef3;
+  --panel: #f8fafc;
+  --land: #dbe4ec;
+  --ink: #142233;
+  --ink-2: #46586c;
+  --muted: #7f8ea0;
+  --line: #c9d4df;
+  --coast: #8fa3b8;
+  --accent: #e39a00;       /* raio: ambar */
+  --accent-ink: #8f5a00;
+  --detect: #0b8b85;       /* estacao que detectou */
+  --station: #8392a4;
+  --band-0: #075e5a; --band-1: #148f87; --band-2: #4db3a9; --band-3: #8fd0c6;
+  --err-0: #cbbcf2; --err-1: #9a80e0; --err-2: #6c4cc4; --err-3: #47279c; --err-4: #2a1166;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1320; --panel: #111c2c; --land: #172338; --ink: #e5ecf4; --ink-2: #a3b1c2;
+    --muted: #6d7d91; --line: #24344b; --coast: #3e5574; --accent: #ffc23d; --accent-ink: #ffcf66;
+    --detect: #43d3c6; --station: #5b6b80;
+    --band-0: #9ef0e6; --band-1: #5fd0c4; --band-2: #2c9f97; --band-3: #1b6f6b;
+    --err-0: #3a2a72; --err-1: #5a3fae; --err-2: #7f63d8; --err-3: #a891ee; --err-4: #d6cafb;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1320; --panel: #111c2c; --land: #172338; --ink: #e5ecf4; --ink-2: #a3b1c2;
+  --muted: #6d7d91; --line: #24344b; --coast: #3e5574; --accent: #ffc23d; --accent-ink: #ffcf66;
+  --detect: #43d3c6; --station: #5b6b80;
+  --band-0: #9ef0e6; --band-1: #5fd0c4; --band-2: #2c9f97; --band-3: #1b6f6b;
+  --err-0: #3a2a72; --err-1: #5a3fae; --err-2: #7f63d8; --err-3: #a891ee; --err-4: #d6cafb;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 var(--font-body);
+  padding-inline: 16px; padding-block: 20px 40px;
+}
+.wrap { max-width: 1320px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.wrap > * { min-width: 0; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 {
+  margin: 0; font-family: var(--font-display); font-weight: 800; font-stretch: 70%;
+  font-size: clamp(2rem, 4vw, 3rem); line-height: 1; letter-spacing: -0.01em;
+}
+h1 span { color: var(--accent-ink); }
+.lede { margin: 6px 0 0; color: var(--ink-2); max-width: 62ch; }
+header a { color: var(--ink-2); font-size: 0.9rem; }
+h2 {
+  margin: 0; font-family: var(--font-display); font-weight: 700; font-stretch: 75%;
+  font-size: 1.6rem; line-height: 1.15; text-wrap: balance;
+}
+.eyebrow {
+  font: 600 0.72rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+
+.sim { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .sim { grid-template-columns: minmax(0, 1fr); } }
+
+.map {
+  position: relative; height: clamp(380px, 76vh, 780px);
+  border-radius: 10px; overflow: hidden; background: var(--bg);
+  border: 1px solid var(--line); cursor: crosshair;
+}
+.map canvas { display: block; width: 100%; height: 100%; }
+.hint {
+  position: absolute; left: 12px; top: 12px; padding: 6px 10px; border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line);
+  font: 0.8rem/1.3 var(--font-mono); color: var(--ink-2); pointer-events: none; max-width: calc(100% - 24px);
+}
+.hint.warn { color: var(--accent-ink); border-color: var(--accent); }
+
+aside { display: grid; gap: 18px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; }
+button, select {
+  font: 600 0.9rem/1 var(--font-body); color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--coast); }
+button:focus-visible, select:focus-visible, input:focus-visible, .steps button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #1a1200; }
+.speed { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.speed button { border: 0; border-radius: 0; background: transparent; padding: 9px 10px; font-family: var(--font-mono); font-weight: 400; }
+.speed button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: s; }
+.steps button {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid;
+  grid-template-columns: 28px minmax(0, 1fr); gap: 2px 10px; padding: 8px 8px; border-radius: 7px;
+}
+.steps button:hover { background: var(--bg); }
+.steps .n {
+  grid-row: span 2; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font: 600 0.75rem/1 var(--font-mono); border: 1.5px solid var(--line); color: var(--muted);
+}
+.steps .t { font-weight: 600; color: var(--ink-2); }
+.steps .d { grid-column: 2; color: var(--ink-2); font-size: 0.92rem; display: none; }
+.steps li.done .n { background: var(--line); color: var(--ink-2); border-color: var(--line); }
+.steps li.now .n { border-color: var(--accent); background: var(--accent); color: #1a1200; }
+.steps li.now .t { color: var(--ink); }
+.steps li.now .d { display: block; }
+.steps li.now button { background: var(--bg); }
+.steps b { color: var(--ink); font-weight: 600; }
+
+.readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.readout div { display: grid; gap: 2px; }
+.readout strong { font: 600 1.25rem/1.1 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+label.field { display: grid; gap: 6px; font-weight: 600; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.small { font-size: 0.85rem; color: var(--ink-2); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.bands { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.bands div { display: grid; gap: 4px; font: 0.75rem/1.2 var(--font-mono); color: var(--ink-2); }
+.bands i { display: block; height: 10px; border-radius: 3px; }
+
+.stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .stats { grid-template-columns: minmax(0, 1fr); } }
+.stats p { margin: 0; color: var(--ink-2); max-width: 60ch; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.tiles div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; }
+.tiles strong { font: 600 1.4rem/1.1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.chart { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; font-family: var(--font-mono); }
+.chart svg .empty { font-family: var(--font-body); }
+.tip {
+  position: absolute; pointer-events: none; padding: 6px 9px; border-radius: 6px; background: var(--ink); color: var(--panel);
+  font: 0.8rem/1.3 var(--font-mono); white-space: nowrap; transform: translate(-50%, -110%);
+}
+.errscale { display: grid; gap: 4px; }
+.errscale i { display: block; height: 10px; border-radius: 3px; }
+.errscale span { display: flex; justify-content: space-between; font: 0.75rem/1 var(--font-mono); color: var(--ink-2); }
+
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 14px; }
+footer a { color: var(--ink-2); }
+code { font-family: var(--font-mono); font-size: 0.9em; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>L-Sim <span>Maranhão</span></h1>
+      <p class="lede">Como uma rede de sensores descobre onde caiu um raio, sabendo só a faixa de distância de cada estação.</p>
+    </div>
+    <a href="https://github.com/wendellr/l-sim">código no GitHub</a>
+  </header>
+
+  <section class="sim">
+    <div class="map" id="map">
+      <canvas id="cv" aria-label="Mapa do Maranhão com estações, raio e regiões de detecção"></canvas>
+      <div class="hint" id="hint">Clique no mapa para fazer cair um raio</div>
+    </div>
+
+    <aside>
+      <div class="card">
+        <div class="controls">
+          <button class="primary" id="btnPlay" type="button">Pausar</button>
+          <button id="btnNext" type="button">Próxima etapa</button>
+          <button id="btnNew" type="button">Novo raio</button>
+          <div class="speed" role="group" aria-label="Velocidade">
+            <button type="button" data-speed="0.5" aria-pressed="false">0,5×</button>
+            <button type="button" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" data-speed="2" aria-pressed="false">2×</button>
+          </div>
+        </div>
+        <ol class="steps" id="steps"></ol>
+        <div class="readout">
+          <div><span class="eyebrow">Detectores</span><strong id="rDet">—</strong></div>
+          <div><span class="eyebrow">Região</span><strong id="rArea">—</strong></div>
+          <div><span class="eyebrow">Erro</span><strong id="rErr">—</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <label class="field" for="lado">Densidade da rede
+          <input id="lado" type="range" min="8" max="40" step="1" value="20">
+        </label>
+        <div class="small mono" id="ladoInfo"></div>
+        <div>
+          <div class="eyebrow" style="margin-bottom:6px">Faixas de detecção</div>
+          <div class="bands" id="bands"></div>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="stats" id="stats">
+    <div style="display:grid; gap:14px">
+      <span class="eyebrow">Modo estatístico</span>
+      <h2>Quantos quilômetros a rede erra?</h2>
+      <p>Um raio só diz pouco. Simule muitos e veja a distribuição do erro e onde, no mapa, a rede localiza pior. Mude a densidade da rede e compare.</p>
+      <div class="controls">
+        <select id="runs" aria-label="Número de raios">
+          <option value="200">200 raios</option>
+          <option value="1000" selected>1.000 raios</option>
+          <option value="5000">5.000 raios</option>
+        </select>
+        <button class="primary" id="btnStats" type="button">Simular</button>
+        <button id="btnBack" type="button" hidden>Voltar à demonstração</button>
+      </div>
+      <div class="tiles" id="tiles">
+        <div><span class="eyebrow">Localizados</span><strong id="tLoc">—</strong></div>
+        <div><span class="eyebrow">Mediana</span><strong id="tMed">—</strong></div>
+        <div><span class="eyebrow">Média</span><strong id="tAvg">—</strong></div>
+        <div><span class="eyebrow">P90</span><strong id="tP90">—</strong></div>
+        <div><span class="eyebrow">Máximo</span><strong id="tMax">—</strong></div>
+      </div>
+      <div class="errscale" id="errscale" hidden>
+        <span class="eyebrow">Cor dos pontos no mapa: erro</span>
+        <i id="errGrad"></i>
+        <span><em>0 km</em><em>10</em><em>20</em><em>30</em><em>40+ km</em></span>
+        <span class="small">Anel vazio: raio não localizado (menos de 2 estações).</span>
+      </div>
+    </div>
+    <div class="chart" id="chart">
+      <div class="eyebrow" style="margin-bottom:8px">Raios por faixa de erro (km)</div>
+      <svg id="hist" viewBox="0 0 640 260" role="img" aria-label="Histograma do erro de localização"></svg>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+  </section>
+
+  <footer>
+    Mesmo algoritmo do <code>l-sim.pl</code>: grade regular de estações, faixas de 0–5, 5–13, 13–32 e 32–64 km,
+    estimativa pelo centroide da interseção dos anéis. As distâncias usam uma projeção local em km,
+    com diferença desprezível para o haversine nessa escala. Autor: Wendell Rodrigues · Licença GPL v3.
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ */
+/* Dados: area de simulacao (mesmo poligono do maranhao.pl)            */
+/* ------------------------------------------------------------------ */
+const AREA = {
+  north: -1.049999, south: -10.261768, east: -41.795879, west: -48.755145,
+  lonlat: [
+    [-46.054688,-1.142502],[-46.186523,-1.450040],[-46.164551,-1.801461],[-46.274414,-2.086941],
+    [-46.450195,-2.438229],[-46.691895,-2.635789],[-46.691895,-3.030812],[-46.867676,-3.403758],
+    [-47.087402,-3.798484],[-47.416992,-4.214943],[-47.658691,-4.543570],[-47.812500,-4.609278],
+    [-48.164063,-4.850154],[-48.449707,-5.134715],[-48.142090,-5.287887],[-47.746582,-5.397273],
+    [-47.416992,-5.681584],[-47.460938,-5.856475],[-47.416992,-6.380812],[-47.482910,-6.773716],
+    [-47.680664,-7.100893],[-47.570801,-7.449624],[-47.329102,-7.667441],[-47.131348,-8.015716],
+    [-46.911621,-8.015716],[-46.647949,-7.928675],[-46.516113,-8.037473],[-46.516113,-8.211490],
+    [-46.713867,-8.363693],[-46.889648,-8.646196],[-47.065430,-8.993600],[-46.845703,-9.253936],
+    [-46.604004,-9.492408],[-46.625977,-9.730714],[-46.428223,-9.882275],[-46.406250,-10.120302],
+    [-46.230469,-10.120302],[-46.054688,-10.271681],[-45.922852,-10.185187],[-45.834961,-9.709057],
+    [-45.812988,-9.449062],[-45.812988,-8.537565],[-45.747070,-8.385431],[-45.615234,-8.080985],
+    [-45.483398,-7.819847],[-45.329590,-7.558547],[-44.890137,-7.449624],[-44.494629,-7.231699],
+    [-44.296875,-7.100893],[-44.099121,-6.795535],[-43.769531,-6.751896],[-43.461914,-6.839170],
+    [-43.176270,-6.751896],[-42.978516,-6.599131],[-42.868652,-6.293459],[-43.088379,-5.725311],
+    [-42.912598,-5.419148],[-42.846680,-5.025283],[-42.912598,-4.718778],[-42.890625,-4.455951],
+    [-42.978516,-4.171115],[-42.846680,-4.017699],[-42.670898,-3.886177],[-42.670898,-3.557283],
+    [-42.473145,-3.425692],[-42.297363,-3.491489],[-42.143555,-3.316018],[-41.791992,-2.899153],
+    [-42.033691,-2.745531],[-42.319336,-2.767478],[-42.539063,-2.767478],[-42.626953,-2.613839],
+    [-42.868652,-2.591889],[-43.176270,-2.460181],[-43.461914,-2.372369],[-43.417969,-2.569939],
+    [-43.571777,-2.526037],[-43.813477,-2.504085],[-43.945313,-2.591889],[-44.055176,-2.723583],
+    [-44.208984,-2.833317],[-44.099121,-2.526037],[-44.099121,-2.438229],[-44.230957,-2.460181],
+    [-44.340820,-2.657738],[-44.406738,-2.943041],[-44.538574,-2.745531],[-44.582520,-2.613839],
+    [-44.428711,-2.394322],[-44.472656,-2.130856],[-44.560547,-1.889306],[-44.758301,-1.669686],
+    [-44.890137,-1.428075],[-45.109863,-1.493971],[-45.263672,-1.559866],[-45.329590,-1.384143],
+    [-45.549316,-1.318243],[-45.966797,-1.164471]
+  ]
+};
+const CITIES = [
+  ["São Luís", -2.53, -44.30, 1], ["Imperatriz", -5.53, -47.49, 1], ["Caxias", -4.86, -43.36, 1],
+  ["Balsas", -7.53, -46.04, 1], ["Bacabal", -4.22, -44.78, 1], ["Barra do Corda", -5.50, -45.25, 1],
+  ["Codó", -4.46, -43.89, 0], ["Santa Inês", -3.67, -45.38, 0], ["Pinheiro", -2.52, -45.08, 0],
+  ["Timon", -5.09, -42.84, 0], ["Açailândia", -4.95, -47.50, 0], ["Chapadinha", -3.74, -43.36, 0]
+];
+// Faixas de deteccao (km), iguais ao funcoes.pl
+const BANDS = [{min: 0, max: 5}, {min: 5, max: 13}, {min: 13, max: 32}, {min: 32, max: 64}];
+
+/* ------------------------------------------------------------------ */
+/* Geometria: projecao local em km (x para leste, y para sul)          */
+/* ------------------------------------------------------------------ */
+const KX = 111.32 * Math.cos(-5.65 * Math.PI / 180), KY = 110.574;
+const proj = (lat, lon) => ({x: (lon - AREA.west) * KX, y: (AREA.north - lat) * KY});
+const unproj = (x, y) => ({lat: AREA.north - y / KY, lon: AREA.west + x / KX});
+const POLY = AREA.lonlat.map(([lon, lat]) => proj(lat, lon));
+const BOX = {x0: 0, y0: 0, x1: (AREA.east - AREA.west) * KX, y1: (AREA.north - AREA.south) * KY};
+
+function inPoly(x, y) {
+  let inside = false;
+  for (let i = 0, j = POLY.length - 1; i < POLY.length; j = i++) {
+    const a = POLY[i], b = POLY[j];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/* ------------------------------------------------------------------ */
+/* Simulacao (porta do funcoes.pl)                                     */
+/* ------------------------------------------------------------------ */
+function genStations(lado) {
+  const out = [], dx = BOX.x1 / lado, dy = BOX.y1 / lado;
+  for (let i = 0; i < lado; i++) for (let j = 0; j < lado; j++) {
+    const x = (j + 0.5) * dx, y = BOX.y1 - (i + 0.5) * dy;
+    if (inPoly(x, y)) out.push({x, y, delay: ((lado - 1 - i) + j) / (2 * lado)});
+  }
+  return out;
+}
+function randStrike() {
+  let p;
+  do p = {x: Math.random() * BOX.x1, y: Math.random() * BOX.y1}; while (!inPoly(p.x, p.y));
+  return p;
+}
+function detect(strike, stations) {
+  const dets = [];
+  stations.forEach((s, idx) => {
+    const d = dist(s, strike);
+    const k = BANDS.findIndex((b, i) => d >= b.min && (d < b.max || (i === BANDS.length - 1 && d === b.max)));
+    if (k >= 0) dets.push({s, idx, d, band: k, min: BANDS[k].min, max: BANDS[k].max});
+  });
+  return dets;
+}
+// Varre o anel do detector de menor area numa grade de 0,5 km e fica com os
+// pontos que respeitam todas as faixas (ou os de menor violacao).
+function estimate(dets, keepCells) {
+  if (dets.length < 2) return null;
+  const step = 0.5;
+  const ref = dets.reduce((a, b) => (b.max ** 2 - b.min ** 2) < (a.max ** 2 - a.min ** 2) ? b : a);
+  const others = dets.filter(d => d !== ref);
+  const n = Math.floor(ref.max / step);
+  let best = Infinity, sx = 0, sy = 0, cnt = 0, cells = keepCells ? [] : null;
+  for (let ix = -n; ix <= n; ix++) for (let iy = -n; iy <= n; iy++) {
+    const ox = ix * step, oy = iy * step, r = Math.hypot(ox, oy);
+    if (r < ref.min || r > ref.max) continue;
+    const x = ref.s.x + ox, y = ref.s.y + oy;
+    let v = 0;
+    for (const o of others) {
+      const d = Math.hypot(o.s.x - x, o.s.y - y);
+      if (d < o.min) v += o.min - d; else if (d > o.max) v += d - o.max;
+      if (v > best) break;
+    }
+    if (v < best) { best = v; sx = x; sy = y; cnt = 1; if (cells) cells.length = 0, cells.push(x, y); }
+    else if (v === best) { sx += x; sy += y; cnt++; if (cells) cells.push(x, y); }
+  }
+  return {x: sx / cnt, y: sy / cnt, cells, count: cnt, area: cnt * step * step, viol: best, step};
+}
+
+/* ------------------------------------------------------------------ */
+/* Estado e etapas                                                     */
+/* ------------------------------------------------------------------ */
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const STEP_MS = [1400, 1700, 2200, 1900, 1200, 1300];
+const HOLD_MS = [700, 900, 1400, 1600, 1600, 0];
+
+const S = {
+  lado: 20, stations: [], strike: null, dets: [], est: null, bolt: null,
+  step: 0, t0: 0, playing: true, speed: 1, mode: "demo",
+  cam: null, camTarget: null, stats: null,
+};
+
+const fmt = (v, d = 1) => v.toLocaleString("pt-BR", {minimumFractionDigits: d, maximumFractionDigits: d});
+const deg = (lat, lon) => `${fmt(Math.abs(lat), 2)}°S, ${fmt(Math.abs(lon), 2)}°O`;
+
+const STEPS = [
+  {t: "Rede de estações", d: () => {
+    const sp = BOX.x1 / S.lado;
+    return `<b>${S.stations.length}</b> estações numa grade regular de ${S.lado}×${S.lado} sobre o Maranhão, uma a cada ≈ ${fmt(sp, 0)} km. Ficam só as que caem dentro do estado.`;
+  }},
+  {t: "O raio cai", d: () => {
+    const g = unproj(S.strike.x, S.strike.y);
+    return `Uma descarga atinge <b>${deg(g.lat, g.lon)}</b>. O ponto foi ${S.clicked ? "escolhido por você" : "sorteado"}; clique no mapa para escolher outro.`;
+  }},
+  {t: "A onda chega às estações", d: () => {
+    const k = S.dets.length;
+    if (!k) return "O raio emite uma onda eletromagnética, mas <b>nenhuma estação</b> está a menos de 64 km. Esse raio passa despercebido.";
+    return `O raio emite uma onda eletromagnética. <b>${k} ${k === 1 ? "estação" : "estações"}</b> a até 64 km a captam, mas cada uma só sabe a <b>faixa</b> de distância: 0–5, 5–13, 13–32 ou 32–64 km.`;
+  }},
+  {t: "Cada estação desenha um anel", d: () => S.dets.length
+    ? "Para cada estação, o raio está em algum ponto do anel da sua faixa. Anéis largos (32–64 km) dizem pouco; anéis estreitos dizem muito."
+    : "Sem detecções, não há anéis para desenhar."},
+  {t: "A interseção dos anéis", d: () => {
+    if (!S.est) return `Com ${S.dets.length === 1 ? "só 1 estação" : "nenhuma estação"} não existe interseção: o raio poderia estar em qualquer ponto do anel. É preciso <b>pelo menos 2</b>.`;
+    return S.est.viol > 0
+      ? `Os anéis quase se tocam. Ficamos com a região que menos viola as faixas: <b>≈ ${fmt(S.est.area, 0)} km²</b>.`
+      : `O raio só pode estar onde <b>todos</b> os anéis se cruzam. Essa região tem <b>≈ ${fmt(S.est.area, 0)} km²</b>.`;
+  }},
+  {t: "A estimativa", d: () => S.est
+    ? `O palpite da rede é o centro dessa região. A distância até o raio real é o erro: <b>${fmt(dist(S.est, S.strike))} km</b>.`
+    : "Raio <b>não localizado</b>. Aumente a densidade da rede ou clique em outro ponto."},
+];
+
+const $ = id => document.getElementById(id);
+const stepsEl = $("steps");
+stepsEl.innerHTML = STEPS.map((s, i) =>
+  `<li><button type="button" data-step="${i}"><span class="n">${i + 1}</span><span class="t">${s.t}</span><span class="d"></span></button></li>`
+).join("");
+stepsEl.addEventListener("click", e => {
+  const b = e.target.closest("button[data-step]");
+  if (b) goStep(+b.dataset.step);
+});
+
+function updatePanel() {
+  const stats = S.mode === "stats";
+  [...stepsEl.children].forEach((li, i) => {
+    li.className = stats ? "" : i < S.step ? "done" : i === S.step ? "now" : "";
+    if (i === S.step) li.querySelector(".d").innerHTML = STEPS[i].d();
+  });
+  const show = k => !stats && S.step >= k;
+  $("rDet").textContent = show(2) ? S.dets.length : "—";
+  $("rArea").textContent = show(4) && S.est ? `${fmt(S.est.area, 0)} km²` : "—";
+  $("rErr").textContent = show(5) ? (S.est ? `${fmt(dist(S.est, S.strike))} km` : "n/l") : "—";
+  $("btnPlay").textContent = S.playing ? "Pausar" : (S.step === STEPS.length - 1 && done() ? "Repetir" : "Reproduzir");
+}
+
+function setStrike(p, clicked) {
+  S.strike = p; S.clicked = clicked;
+  S.dets = detect(p, S.stations);
+  S.est = estimate(S.dets, true);
+  S.bolt = makeBolt();
+}
+function setStations() {
+  S.stations = genStations(S.lado);
+  const sp = BOX.x1 / S.lado;
+  $("ladoInfo").textContent = `grade ${S.lado}×${S.lado} = ${S.lado ** 2} pontos → ${S.stations.length} estações · espaçamento ≈ ${fmt(sp, 0)} km`;
+}
+
+const dur = k => reduceMotion ? 1 : STEP_MS[k] / S.speed;
+const prog = (k, now = performance.now()) => S.step > k ? 1 : S.step < k ? 0 : Math.min(1, (now - S.t0) / dur(k));
+const done = () => prog(S.step) >= 1;
+
+function goStep(k) {
+  if (S.mode === "stats") { statsJob++; $("btnStats").disabled = false; }
+  S.mode = "demo"; showStatsUi(false);
+  S.step = Math.max(0, Math.min(STEPS.length - 1, k));
+  S.t0 = performance.now();
+  S.camTarget = camFor(S.step);
+  updatePanel();
+}
+function newRun(p, clicked) {
+  setStrike(p || randStrike(), !!clicked);
+  S.playing = true;
+  goStep(clicked ? 1 : 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Canvas, camera e desenho                                            */
+/* ------------------------------------------------------------------ */
+const cv = $("cv"), ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1, C = {};
+
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = n => cs.getPropertyValue(n).trim();
+  C = {
+    bg: g("--bg"), panel: g("--panel"), land: g("--land"), ink: g("--ink"), ink2: g("--ink-2"), muted: g("--muted"),
+    line: g("--line"), coast: g("--coast"), accent: g("--accent"), detect: g("--detect"), station: g("--station"),
+    bands: [0, 1, 2, 3].map(i => g(`--band-${i}`)), err: [0, 1, 2, 3, 4].map(i => g(`--err-${i}`)),
+    mono: g("--font-mono"), body: g("--font-body"),
+  };
+  $("errGrad").style.background = `linear-gradient(90deg, ${C.err.join(",")})`;
+  [...$("bands").querySelectorAll("i")].forEach((el, i) => el.style.background = C.bands[i]);
+}
+$("bands").innerHTML = BANDS.map(b => `<div><i></i>${b.min}–${b.max} km</div>`).join("");
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", readColors);
+new MutationObserver(readColors).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme", "class"]});
+
+function resize() {
+  const r = cv.getBoundingClientRect();
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = r.width; H = r.height;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  if (!S.cam) S.cam = fullView();
+  if (S.camTarget) S.camTarget = S.mode === "demo" ? camFor(S.step) : fullView();
+}
+new ResizeObserver(resize).observe(cv);
+
+function fullView() {
+  const pad = 28, s = Math.min((W - 2 * pad) / BOX.x1, (H - 2 * pad) / BOX.y1);
+  return {cx: BOX.x1 / 2, cy: BOX.y1 / 2, s: Math.max(s, 0.05)};
+}
+function zoomView(p) {
+  const s = Math.min(W, H) / (2 * 78);
+  return {cx: p.x, cy: p.y, s};
+}
+// etapas 5 e 6: aproxima na regiao de intersecao + raio real
+function closeView() {
+  const c = S.est.cells, xs = [S.strike.x, S.est.x], ys = [S.strike.y, S.est.y];
+  for (let i = 0; i < c.length; i += 2) { xs.push(c[i]); ys.push(c[i + 1]); }
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const size = Math.max(x1 - x0, y1 - y0, 14) * 2.2;
+  return {cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, s: Math.min(W, H) / size};
+}
+function camFor(step) {
+  if (step === 0 || !S.strike) return fullView();
+  if (step >= 4 && S.est) return closeView();
+  return zoomView(S.strike);
+}
+const toS = (x, y) => [(x - S.cam.cx) * S.cam.s + W / 2, (y - S.cam.cy) * S.cam.s + H / 2];
+const toW = (sx, sy) => ({x: (sx - W / 2) / S.cam.s + S.cam.cx, y: (sy - H / 2) / S.cam.s + S.cam.cy});
+
+const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeBack = t => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+const clamp01 = t => Math.max(0, Math.min(1, t));
+
+// cores dos tokens sao hex (#rrggbb); o canvas recebe rgba()
+const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+function alpha(color, a) {
+  const [r, g, b] = rgb(color);
+  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a))})`;
+}
+
+function makeBolt() {
+  // raio fractal: lista de pontos (t ao longo do caminho, deslocamento lateral)
+  let pts = [[0, 0], [1, 0]];
+  for (let it = 0, amp = 0.16; it < 6; it++, amp *= 0.55) {
+    const next = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      next.push(a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + (Math.random() - 0.5) * amp]);
+    }
+    next.push(pts[pts.length - 1]);
+    pts = next;
+  }
+  return {pts, lean: (Math.random() - 0.5) * 0.5, branchAt: 0.35 + Math.random() * 0.25, branchDir: Math.random() < 0.5 ? -1 : 1};
+}
+
+function drawBase() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+
+  // graticula de 1 grau
+  ctx.lineWidth = 1; ctx.strokeStyle = C.line;
+  ctx.font = `500 10px ${C.mono}`;
+  ctx.fillStyle = C.muted;
+  for (let lat = -11; lat <= 0; lat++) {
+    const y = toS(0, proj(lat, 0).y)[1];
+    if (y < -1 || y > H + 1) continue;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    if (y > 52) { ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText(`${-lat}°S`, 6, y - 2); }
+  }
+  for (let lon = -50; lon <= -40; lon++) {
+    const x = toS(proj(0, lon).x, 0)[0];
+    if (x < -1 || x > W + 1) continue;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText(`${-lon}°O`, x + 3, H - 6);
+  }
+
+  // estado
+  ctx.beginPath();
+  POLY.forEach((p, i) => { const [x, y] = toS(p.x, p.y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.closePath();
+  ctx.fillStyle = C.land; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = C.coast; ctx.stroke();
+
+  // cidades
+  const zoomed = S.cam.s > 1.5;
+  ctx.font = `600 11px ${C.body}`;
+  for (const [name, lat, lon, major] of CITIES) {
+    if (!major && !zoomed) continue;
+    const p = proj(lat, lon), [x, y] = toS(p.x, p.y);
+    if (x < -50 || x > W + 50 || y < -20 || y > H + 20) continue;
+    ctx.fillStyle = C.ink2;
+    ctx.beginPath(); ctx.rect(x - 2, y - 2, 4, 4); ctx.fill();
+    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(name, x + 6, y);
+  }
+}
+
+function drawScaleBar() {
+  const opts = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+  const km = opts.find(k => k * S.cam.s >= 70) || 500;
+  const len = km * S.cam.s, x = W - len - 16, y = H - 30;
+  ctx.strokeStyle = C.ink2; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x, y); ctx.lineTo(x + len, y); ctx.lineTo(x + len, y - 5); ctx.stroke();
+  ctx.fillStyle = C.ink2; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.font = `500 11px ${C.mono}`;
+  ctx.fillText(`${km} km`, x + len / 2, y - 6);
+}
+
+function drawStations(now) {
+  const p0 = prog(0, now), waveR = S.step > 2 ? 1e9 : S.step === 2 ? easeOut(prog(2, now)) * 70 : -1;
+  const detected = new Map(S.dets.map(d => [d.s, d]));
+  const r0 = Math.max(2.2, Math.min(5, S.cam.s * 2.2));
+  for (const s of S.stations) {
+    const a = clamp01((p0 - s.delay * 0.7) / 0.3);
+    if (a <= 0) continue;
+    const [x, y] = toS(s.x, s.y);
+    if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
+    const det = detected.get(s), lit = det && waveR >= det.d;
+    const r = r0 * (S.step === 0 ? easeBack(a) : 1) * (lit ? 1.5 : 1);
+    if (lit) {
+      ctx.fillStyle = alpha(C.detect, 0.22);
+      ctx.beginPath(); ctx.arc(x, y, r * 2.6, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = lit ? C.detect : C.station;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = C.bg; ctx.stroke();
+    if (lit && (S.step === 2 || S.step === 3)) {
+      ctx.font = `600 11px ${C.mono}`;
+      const label = `${det.min}–${det.max} km`;
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = alpha(C.panel, 0.9);
+      ctx.fillRect(x + r + 4, y - 9, tw + 8, 18);
+      ctx.fillStyle = C.ink; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(label, x + r + 8, y);
+    }
+  }
+}
+
+function drawRings(now) {
+  if (S.step < 3 || !S.dets.length) return;
+  const p = prog(3, now), n = S.dets.length, stag = 0.18, one = 0.6;
+  const fade = S.step >= 4 ? 0.6 : 1;
+  S.dets.forEach((d, i) => {
+    const pi = easeOut(clamp01((p * (one + stag * (n - 1)) - stag * i) / one));
+    if (pi <= 0) return;
+    const [x, y] = toS(d.s.x, d.s.y), col = C.bands[d.band];
+    const ro = d.max * pi * S.cam.s, ri = d.min * pi * S.cam.s;
+    ctx.beginPath();
+    ctx.arc(x, y, ro, 0, Math.PI * 2);
+    if (ri > 0) { ctx.moveTo(x + ri, y); ctx.arc(x, y, ri, 0, Math.PI * 2, true); }
+    ctx.fillStyle = alpha(col, 0.09 * fade); ctx.fill("evenodd");
+    ctx.lineWidth = 1.5; ctx.strokeStyle = alpha(col, 0.85 * fade);
+    ctx.beginPath(); ctx.arc(x, y, ro, 0, Math.PI * 2); ctx.stroke();
+    if (ri > 0) { ctx.beginPath(); ctx.arc(x, y, ri, 0, Math.PI * 2); ctx.stroke(); }
+  });
+}
+
+function drawIntersection(now) {
+  if (S.step < 4 || !S.est) return;
+  const p = prog(4, now), cells = S.est.cells, st = S.est.step, sz = Math.max(1, st * S.cam.s + 0.6);
+  const pulse = S.step === 4 && p >= 1 && !reduceMotion ? 0.12 * Math.sin(now / 260) : 0;
+  ctx.fillStyle = alpha(C.accent, (0.55 + pulse) * easeOut(p));
+  for (let i = 0; i < cells.length; i += 2) {
+    const [x, y] = toS(cells[i], cells[i + 1]);
+    ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+  }
+}
+
+function drawStrike(now) {
+  if (S.step < 1 || !S.strike) return;
+  const p = prog(1, now), [x, y] = toS(S.strike.x, S.strike.y);
+  const boltStart = 0.5, boltEnd = 0.78;
+
+  // flash do raio
+  if (S.step === 1 && p >= boltStart && p < 1 && !reduceMotion) {
+    const q = (p - boltStart) / (1 - boltStart);
+    const flicker = q < (boltEnd - boltStart) / (1 - boltStart) ? (Math.sin(q * 60) > -0.3 ? 1 : 0.3) : 0;
+    const a = (1 - q) * flicker;
+    if (a > 0) {
+      ctx.fillStyle = alpha(C.accent, 0.12 * a); ctx.fillRect(0, 0, W, H);
+      const top = [x + S.bolt.lean * H, -10], len = Math.hypot(top[0] - x, top[1] - y);
+      const nx = -(y - top[1]) / len, ny = (x - top[0]) / len;
+      const path = (pts, from, to, scale) => {
+        ctx.beginPath();
+        pts.forEach(([t, o], i) => {
+          const px = from[0] + (to[0] - from[0]) * t + nx * o * len * scale;
+          const py = from[1] + (to[1] - from[1]) * t + ny * o * len * scale;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        });
+      };
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      path(S.bolt.pts, top, [x, y], 1);
+      ctx.strokeStyle = alpha(C.accent, 0.35 * a); ctx.lineWidth = 9; ctx.stroke();
+      ctx.strokeStyle = alpha(C.accent, a); ctx.lineWidth = 2.5; ctx.stroke();
+      const bi = Math.floor(S.bolt.branchAt * S.bolt.pts.length), b0 = S.bolt.pts[bi];
+      const bx = top[0] + (x - top[0]) * b0[0] + nx * b0[1] * len, by = top[1] + (y - top[1]) * b0[0] + ny * b0[1] * len;
+      path(S.bolt.pts.slice(0, 40), [bx, by], [bx + S.bolt.branchDir * len * 0.25, by + len * 0.22], 0.5);
+      ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+  if (S.step === 1 && p < boltStart) return;
+
+  // onda eletromagnetica
+  if (S.step === 2 && !reduceMotion) {
+    const q = prog(2, now), r = easeOut(q) * 70 * S.cam.s;
+    for (let k = 0; k < 3; k++) {
+      const rk = r - k * 10 * S.cam.s;
+      if (rk <= 0) continue;
+      ctx.strokeStyle = alpha(C.accent, (1 - q) * (0.7 - k * 0.2));
+      ctx.lineWidth = 2 - k * 0.5;
+      ctx.beginPath(); ctx.arc(x, y, rk, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  // marcador do raio real
+  const real = S.step >= 4;
+  const pulse = reduceMotion ? 0 : (now / 900) % 1;
+  if (!real) {
+    ctx.strokeStyle = alpha(C.accent, 1 - pulse); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 6 + pulse * 18, 0, Math.PI * 2); ctx.stroke();
+  }
+  drawBoltIcon(x, y, real ? 0.8 : 1.1, real ? 0.75 : 1);
+  if (real) {
+    const below = !S.est || S.strike.y >= S.est.y;
+    label(x, y + (below ? 24 : -24), "raio real", C.ink2);
+  }
+}
+
+function drawBoltIcon(x, y, sc, a) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
+  ctx.beginPath();
+  ctx.moveTo(3, -14); ctx.lineTo(-7, 2); ctx.lineTo(-0.5, 2); ctx.lineTo(-3, 14); ctx.lineTo(7, -3); ctx.lineTo(0.5, -3); ctx.closePath();
+  ctx.fillStyle = alpha(C.accent, a); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = C.bg; ctx.stroke();
+  ctx.restore();
+}
+
+function label(x, y, text, color, bold) {
+  ctx.font = `${bold ? 600 : 500} 12px ${C.mono}`;
+  const tw = ctx.measureText(text).width;
+  ctx.fillStyle = alpha(C.panel, 0.92);
+  ctx.fillRect(x - tw / 2 - 6, y - 10, tw + 12, 20);
+  ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+function drawEstimate(now) {
+  if (S.step < 5 || !S.est) return;
+  const p = easeOut(prog(5, now));
+  const [ex, ey] = toS(S.est.x, S.est.y), [rx, ry] = toS(S.strike.x, S.strike.y);
+  // linha do erro
+  ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = alpha(C.ink, p);
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + (rx - ex) * p, ey + (ry - ey) * p); ctx.stroke();
+  ctx.setLineDash([]);
+  // mira
+  const r = 9 * (1 + (1 - p) * 2.5);
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(ex, ey, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(ex - r - 6, ey); ctx.lineTo(ex - r + 4, ey); ctx.moveTo(ex + r - 4, ey); ctx.lineTo(ex + r + 6, ey);
+  ctx.moveTo(ex, ey - r - 6); ctx.lineTo(ex, ey - r + 4); ctx.moveTo(ex, ey + r - 4); ctx.lineTo(ex, ey + r + 6);
+  ctx.stroke();
+  if (p > 0.6) {
+    // rotulos em lados opostos; com a linha curta, o erro vai junto da estimativa
+    const up = ry >= ey, err = `erro ${fmt(dist(S.est, S.strike))} km`;
+    const long = Math.hypot(rx - ex, ry - ey) > 150;
+    label(ex, ey + (up ? -1 : 1) * (r + 18), long ? "estimativa" : `estimativa · ${err}`, C.ink, true);
+    if (long) {
+      const mx = (ex + rx) / 2, my = (ey + ry) / 2, len = Math.hypot(rx - ex, ry - ey);
+      let nx = -(ry - ey) / len, ny = (rx - ex) / len;
+      if (ny > 0) { nx = -nx; ny = -ny; }
+      label(mx + nx * 22, my + ny * 22, err, C.ink, true);
+    }
+  }
+}
+
+function drawStatsMap() {
+  const st = S.stats;
+  if (!st) return;
+  const r = Math.max(2, Math.min(4, S.cam.s * 3));
+  for (const s of S.stations) {
+    const [x, y] = toS(s.x, s.y);
+    ctx.fillStyle = alpha(C.station, 0.7);
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 7); ctx.fill();
+  }
+  for (const pt of st.points) {
+    const [x, y] = toS(pt.x, pt.y);
+    if (pt.err == null) {
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, r + 0.5, 0, 7); ctx.stroke();
+    } else {
+      ctx.fillStyle = errColor(pt.err);
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    }
+  }
+}
+function errColor(e) {
+  const t = Math.min(1, e / 40) * (C.err.length - 1), i = Math.min(C.err.length - 2, Math.floor(t));
+  const a = rgb(C.err[i]), b = rgb(C.err[i + 1]), f = t - i;
+  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = now - last; last = now;
+  if (W && H) {
+    // camera persegue o alvo suavemente
+    const tgt = S.camTarget || fullView();
+    if (reduceMotion) S.cam = {...tgt};
+    else {
+      const k = 1 - Math.exp(-dt / 260);
+      S.cam.cx += (tgt.cx - S.cam.cx) * k; S.cam.cy += (tgt.cy - S.cam.cy) * k;
+      S.cam.s *= Math.pow(tgt.s / S.cam.s, k);
+    }
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    drawBase();
+    if (S.mode === "stats") drawStatsMap();
+    else {
+      drawRings(now); drawIntersection(now); drawStations(now); drawStrike(now); drawEstimate(now);
+    }
+    drawScaleBar();
+  }
+  // avanco automatico
+  if (S.mode === "demo" && S.playing && done()) {
+    const held = now - S.t0 - dur(S.step);
+    if (S.step === STEPS.length - 1) { S.playing = false; updatePanel(); }
+    else if (held >= (reduceMotion ? 900 : HOLD_MS[S.step] / S.speed)) goStep(S.step + 1);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ------------------------------------------------------------------ */
+/* Interacao                                                           */
+/* ------------------------------------------------------------------ */
+let hintTimer;
+function hint(text, warn) {
+  const h = $("hint"); h.textContent = text; h.classList.toggle("warn", !!warn);
+  clearTimeout(hintTimer);
+  if (warn) hintTimer = setTimeout(() => hint("Clique no mapa para fazer cair um raio"), 2200);
+}
+cv.addEventListener("click", e => {
+  const r = cv.getBoundingClientRect(), p = toW(e.clientX - r.left, e.clientY - r.top);
+  if (!inPoly(p.x, p.y)) return hint("Fora do Maranhão: clique dentro do estado", true);
+  newRun(p, true);
+});
+$("btnPlay").addEventListener("click", () => {
+  if (!S.playing && S.step === STEPS.length - 1 && done()) { S.playing = true; goStep(0); return; }
+  S.playing = !S.playing;
+  if (S.mode !== "demo") goStep(S.step);
+  updatePanel();
+});
+$("btnNext").addEventListener("click", () => {
+  if (S.mode !== "demo") return goStep(S.step);
+  if (!done()) S.t0 = performance.now() - dur(S.step);
+  else if (S.step < STEPS.length - 1) goStep(S.step + 1);
+  updatePanel();
+});
+$("btnNew").addEventListener("click", () => newRun(null, false));
+document.querySelectorAll(".speed button").forEach(b => b.addEventListener("click", () => {
+  const p = prog(S.step);
+  S.speed = +b.dataset.speed;
+  S.t0 = performance.now() - p * dur(S.step);
+  document.querySelectorAll(".speed button").forEach(o => o.setAttribute("aria-pressed", o === b));
+}));
+$("lado").addEventListener("input", e => {
+  S.lado = +e.target.value;
+  setStations();
+  setStrike(S.strike, S.clicked);
+  S.stats = null; resetStats();
+  S.playing = true;
+  goStep(0);
+});
+
+/* ------------------------------------------------------------------ */
+/* Modo estatistico                                                    */
+/* ------------------------------------------------------------------ */
+const BIN = 2, NBINS = 20; // 0-2, 2-4, ... 38-40, 40+
+function resetStats() {
+  ["tLoc", "tMed", "tAvg", "tP90", "tMax"].forEach(id => $(id).textContent = "—");
+  drawHist(null);
+}
+function showStatsUi(on) {
+  $("btnBack").hidden = !on; $("errscale").hidden = !on;
+  hint(on ? "Cada ponto é um raio simulado; a cor é o erro" : "Clique no mapa para fazer cair um raio");
+}
+
+let statsJob = 0;
+$("btnStats").addEventListener("click", () => {
+  const total = +$("runs").value, job = ++statsJob;
+  const st = S.stats = {total, points: [], errs: [], bins: new Array(NBINS + 1).fill(0), miss: 0};
+  S.mode = "stats"; S.playing = false; S.camTarget = fullView();
+  showStatsUi(true); updatePanel();
+  $("btnStats").disabled = true;
+  const chunk = () => {
+    if (job !== statsJob) return;
+    const t = performance.now();
+    while (st.points.length < total && performance.now() - t < 24) {
+      const p = randStrike(), dets = detect(p, S.stations), e = estimate(dets, false);
+      if (e) {
+        const err = dist(e, p);
+        st.errs.push(err); st.bins[Math.min(NBINS, Math.floor(err / BIN))]++;
+        st.points.push({x: p.x, y: p.y, err});
+      } else { st.miss++; st.points.push({x: p.x, y: p.y, err: null}); }
+    }
+    renderStats(st);
+    if (st.points.length < total) requestAnimationFrame(chunk);
+    else $("btnStats").disabled = false;
+  };
+  chunk();
+});
+$("btnBack").addEventListener("click", () => { S.playing = true; goStep(0); });
+
+function renderStats(st) {
+  const n = st.points.length, e = [...st.errs].sort((a, b) => a - b);
+  const q = f => e[Math.round(f * (e.length - 1))];
+  $("tLoc").textContent = `${fmt(100 * e.length / n)}%`;
+  if (e.length) {
+    $("tMed").textContent = `${fmt(q(0.5))} km`;
+    $("tAvg").textContent = `${fmt(e.reduce((a, b) => a + b, 0) / e.length)} km`;
+    $("tP90").textContent = `${fmt(q(0.9))} km`;
+    $("tMax").textContent = `${fmt(e[e.length - 1])} km`;
+  }
+  drawHist(st, e.length ? q(0.5) : null);
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function drawHist(st, median) {
+  const svg = $("hist"), w = 640, h = 260, m = {l: 44, r: 8, t: 12, b: 30};
+  const iw = w - m.l - m.r, ih = h - m.t - m.b, nb = NBINS + 1, bw = iw / nb;
+  const bins = st ? st.bins : new Array(nb).fill(0), located = st ? st.errs.length : 0;
+  const maxV = Math.max(...bins, 1);
+  const stepY = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000].find(s => maxV / s <= 4) || 5000;
+  const top = Math.ceil(maxV / stepY) * stepY;
+  const y = v => m.t + ih - (v / top) * ih;
+  let html = "";
+  for (let v = 0; v <= top; v += stepY) {
+    html += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--line)" stroke-width="1"/>`;
+    html += `<text x="${m.l - 8}" y="${y(v)}" style="fill:var(--muted)" font-size="11" text-anchor="end" dominant-baseline="middle">${v}</text>`;
+  }
+  bins.forEach((v, i) => {
+    if (!v) return;
+    const x = m.l + i * bw + 1, bh = Math.max(1, (v / top) * ih), r = Math.min(4, bh, (bw - 2) / 2);
+    const x0 = x, x1 = x + bw - 2, y0 = m.t + ih, y1 = y0 - bh;
+    html += `<path d="M${x0},${y0} V${y1 + r} Q${x0},${y1} ${x0 + r},${y1} H${x1 - r} Q${x1},${y1} ${x1},${y1 + r} V${y0} Z" style="fill:var(${i === NBINS ? "--err-3" : "--err-2"})"/>`;
+  });
+  for (let k = 0; k <= 40; k += 10) {
+    const x = m.l + (k / BIN) * bw;
+    html += `<text x="${x}" y="${h - 10}" style="fill:var(--muted)" font-size="11" text-anchor="middle">${k}</text>`;
+  }
+  html += `<text x="${m.l + NBINS * bw + bw / 2}" y="${h - 10}" style="fill:var(--muted)" font-size="11" text-anchor="middle">40+</text>`;
+  html += `<line x1="${m.l}" x2="${w - m.r}" y1="${m.t + ih}" y2="${m.t + ih}" style="stroke:var(--muted)" stroke-width="1"/>`;
+  if (median != null) {
+    const x = m.l + Math.min(median, 42) / BIN * bw;
+    html += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${m.t + ih}" style="stroke:var(--ink)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    html += `<text x="${x + 6}" y="${m.t + 10}" style="fill:var(--ink)" font-size="11">mediana ${fmt(median)} km</text>`;
+  }
+  if (!st) html += `<text x="${m.l + iw / 2}" y="${m.t + ih / 2}" class="empty" style="fill:var(--muted)" font-size="14" text-anchor="middle">Clique em Simular para preencher o histograma</text>`;
+  bins.forEach((v, i) => {
+    html += `<rect class="hit" data-i="${i}" x="${m.l + i * bw}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent"/>`;
+  });
+  svg.innerHTML = html;
+  svg._bins = bins; svg._located = located;
+}
+const tip = $("tip");
+$("hist").addEventListener("mousemove", e => {
+  const t = e.target.closest(".hit"), svg = $("hist");
+  if (!t || !svg._located) { tip.hidden = true; return; }
+  const i = +t.dataset.i, v = svg._bins[i];
+  const range = i === NBINS ? "≥ 40 km" : `${i * BIN}–${(i + 1) * BIN} km`;
+  tip.textContent = `${range}: ${v} raios (${fmt(100 * v / svg._located)}%)`;
+  const box = $("chart").getBoundingClientRect(), r = t.getBoundingClientRect();
+  tip.style.left = `${r.left - box.left + r.width / 2}px`;
+  tip.style.top = `${e.clientY - box.top - 6}px`;
+  tip.hidden = false;
+});
+$("hist").addEventListener("mouseleave", () => tip.hidden = true);
+
+/* ------------------------------------------------------------------ */
+/* Inicio                                                              */
+/* ------------------------------------------------------------------ */
+readColors();
+setStations();
+resize();
+resetStats();
+newRun(null, false);
+// links diretos: #etapa1 ... #etapa6 abrem a etapa ja concluida; #estatisticas roda 1.000 raios
+function fromHash() {
+  const m = /^#etapa([1-6])$/.exec(location.hash);
+  if (m) {
+    S.playing = false; goStep(+m[1] - 1);
+    S.t0 = -1e9; S.cam = {...S.camTarget}; updatePanel();
+  } else if (location.hash === "#estatisticas") {
+    $("btnStats").click(); S.cam = fullView();
+  }
+}
+fromHash();
+addEventListener("hashchange", fromHash);
+requestAnimationFrame(frame);
+</script>

@@ -23,6 +23,22 @@ Cada rodada da simulação faz o seguinte:
    anéis (são necessárias pelo menos 2 estações).
 6. **Erro**: a distância, em km, entre o raio estimado e o raio real.
 
+## Versão web interativa
+
+Abra o [`index.html`](index.html) no navegador (duplo clique). Não precisa de instalação nem de servidor.
+
+- A simulação é animada em 6 etapas, com uma explicação em cada uma: rede de estações → queda do raio →
+  onda chegando às estações → anéis de cada faixa → interseção → estimativa e erro.
+- **Clique no mapa** para escolher onde o raio cai.
+- Use os controles para reproduzir, pausar, avançar etapa, mudar a velocidade (0,5×, 1×, 2×) e
+  ajustar a densidade da rede.
+- O **modo estatístico** simula 200, 1.000 ou 5.000 raios. Ele mostra o histograma do erro e um mapa
+  com cada raio colorido pelo erro, revelando onde a rede localiza pior.
+- **Links diretos:** `index.html#etapa1` a `#etapa6` abrem uma etapa já concluída, e `#estatisticas`
+  roda o modo estatístico. São úteis em aula.
+
+A página usa o mesmo algoritmo do `funcoes.pl`, reescrito em JavaScript.
+
 ## Requisitos
 
 - Perl 5.10 ou superior. Só são usados módulos do core (`Getopt::Long`, `List::Util`, `FindBin`);
@@ -83,6 +99,7 @@ for n in 100 400 900; do perl l-sim.pl -n $n -r 500 -s 1 > /dev/null; done
 
 | Arquivo | Conteúdo |
 |---------|----------|
+| `index.html` | Versão web interativa e animada (abre direto no navegador) |
 | `l-sim.pl` | Programa principal (demonstração passo a passo e modo estatístico) |
 | `funcoes.pl` | Geometria (haversine, ponto em polígono) e algoritmos de geração, detecção e localização |
 | `kml.pl` | Geração da saída KML (Google Earth) |
