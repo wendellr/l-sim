@@ -1,5 +1,7 @@
 # L-Sim — Simulador de Descargas Atmosféricas
 
+**▶ Experimente online: https://wendellr.github.io/l-sim/**
+
 O L-Sim simula uma rede de sensores de raios e mede o quanto ela consegue
 localizar uma descarga atmosférica. O cenário padrão é o estado do Maranhão.
 
@@ -25,7 +27,7 @@ Cada rodada da simulação faz o seguinte:
 
 ## Versão web interativa
 
-Abra o [`index.html`](index.html) no navegador (duplo clique). Não precisa de instalação nem de servidor.
+Acesse **https://wendellr.github.io/l-sim/** ou abra o [`index.html`](index.html) no navegador (duplo clique). Não precisa de instalação nem de servidor.
 
 - A simulação é animada em 6 etapas, com uma explicação em cada uma: rede de estações → queda do raio →
   onda chegando às estações → anéis de cada faixa → interseção → estimativa e erro.
